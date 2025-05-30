@@ -1,2 +1,2 @@
 # aiogram_bot
-lesson TG01
+lesson TG02
