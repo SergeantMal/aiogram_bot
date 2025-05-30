@@ -2,12 +2,18 @@ import asyncio
 import aiohttp
 import os
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message
+from aiogram.types import Message, FSInputFile
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
 from aiogram.client.default import DefaultBotProperties
 from dotenv import load_dotenv
+from deep_translator import GoogleTranslator
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from gtts import gTTS
+import uuid
+
 
 load_dotenv()
 
@@ -24,6 +30,8 @@ def get_main_keyboard():
     builder.button(text="👋 Старт")
     builder.button(text="ℹ️ Помощь")
     builder.button(text="🌦 Прогноз погоды")
+    builder.button(text="🎤 Голосовое сообщение")
+    builder.button(text="💬 Переведи текст")
     builder.adjust(2)  # 2 кнопки в ряд
     return builder.as_markup(resize_keyboard=True)
 
@@ -31,7 +39,7 @@ def get_main_keyboard():
 @dp.message(F.text == "👋 Старт")
 async def start_handler(message: Message):
     await message.answer(
-        "Привет! Я погодный бот. Я могу показать тебе прогноз погоды в Москве ☁️\n\n"
+        "Привет! Я погодный бот. Я могу сохранить фото, отправить голосовое или перевести текст. Я также могу показать тебе прогноз погоды в Москве ☁️\n\n"
         "Выбери нужную опцию ниже 👇",
         reply_markup=get_main_keyboard()
     )
@@ -43,9 +51,57 @@ async def help_handler(message: Message):
         "Я могу:\n"
         "🌦 Показать текущую погоду в Москве\n"
         "👋 Поздороваться\n"
-        "ℹ️ Рассказать, что я умею\n\n"
-        "Просто нажми на кнопку!"
+        "ℹ️ Рассказать, что я умею\n"
+        "🔤 Перевести твой текст на английский\n"
+        "🎤 Преобразовать твой текст в голосовое сообщение\n\n"
+        "Просто нажми на кнопку или напиши сообщение!"
     )
+
+# Состояния FSM
+class VoiceStates(StatesGroup):
+    waiting_for_text = State()
+
+class TranslateStates(StatesGroup):
+    waiting_for_text = State()
+
+# --- Обработка кнопки "🎤 Голосовое сообщение" ---
+@dp.message(F.text == "🎤 Голосовое сообщение")
+async def request_voice_text(message: Message, state: FSMContext):
+    await message.answer("✍️ Введите текст, который хотите озвучить:")
+    await state.set_state(VoiceStates.waiting_for_text)
+
+@dp.message(VoiceStates.waiting_for_text)
+async def generate_and_send_voice(message: Message, state: FSMContext):
+    text = message.text
+    try:
+        tts = gTTS(text, lang='ru')
+        filename = f"{uuid.uuid4()}.ogg"
+        tts.save(filename)
+
+        voice = FSInputFile(filename)
+        await message.answer_voice(voice, caption="🎧 Вот ваше голосовое сообщение")
+
+        os.remove(filename)
+    except Exception as e:
+        await message.reply(f"Произошла ошибка: {e}")
+    finally:
+        await state.clear()
+
+# --- Обработка кнопки "💬 Переведи текст" ---
+@dp.message(F.text == "💬 Переведи текст")
+async def request_translation_text(message: Message, state: FSMContext):
+    await message.answer("✍️ Введите текст на русском для перевода на английский:")
+    await state.set_state(TranslateStates.waiting_for_text)
+
+@dp.message(TranslateStates.waiting_for_text)
+async def handle_translation(message: Message, state: FSMContext):
+    try:
+        translated = GoogleTranslator(source='ru', target='en').translate(message.text)
+        await message.reply(f"🔤 Перевод:\n{translated}")
+    except Exception as e:
+        await message.reply(f"Произошла ошибка при переводе: {e}")
+    finally:
+        await state.clear()
 
 # 🔵 Обработка "Прогноз погоды"
 @dp.message(F.text == "🌦 Прогноз погоды")
