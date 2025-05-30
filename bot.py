@@ -4,7 +4,7 @@ import os
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, FSInputFile
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
-from aiogram.enums import ParseMode
+from aiogram.enums import ParseMode, ContentType
 from aiogram.filters import Command
 from aiogram.client.default import DefaultBotProperties
 from dotenv import load_dotenv
@@ -123,6 +123,18 @@ async def forecast_handler(message: Message):
                 await message.answer(text)
             else:
                 await message.answer("⚠️ Не удалось получить прогноз. Попробуйте позже.")
+
+
+# --- Сохраняем фото в папку img ---
+@dp.message(F.content_type == ContentType.PHOTO)
+async def save_photo(message: Message):
+    os.makedirs("img", exist_ok=True)
+    photo = message.photo[-1]  # самое большое фото
+    file = await bot.get_file(photo.file_id)
+    file_path = file.file_path
+    destination = f"img/{photo.file_id}.jpg"
+    await bot.download_file(file_path, destination)
+    await message.reply("✅ Фото сохранено!")
 
 # 🔹 На случай ввода текста вручную
 @dp.message(Command("start"))
