@@ -1,7 +1,8 @@
 import asyncio
 import aiohttp
 import os
-from aiogram import Bot, Dispatcher, F
+from aiogram import Bot, Dispatcher, F, types
+from aiogram.fsm import state
 from aiogram.types import Message, FSInputFile
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from aiogram.enums import ParseMode, ContentType
@@ -13,7 +14,11 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from gtts import gTTS
 import uuid
+import sqlite3
+from aiogram.fsm.storage.memory import MemoryStorage
+import logging
 
+logging.basicConfig(level=logging.INFO)
 
 load_dotenv()
 
@@ -24,6 +29,29 @@ bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 
 dp = Dispatcher()
 
+def init_db():
+    conn = sqlite3.connect('school_data.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS students (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            age INTEGER,
+            grade TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def insert_student(name, age, grade):
+    conn = sqlite3.connect('school_data.db')
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO students (name, age, grade) VALUES (?, ?, ?)', (name, age, grade))
+    conn.commit()
+    conn.close()
+
 # 📌 Клавиатура с эмодзи
 def get_main_keyboard():
     builder = ReplyKeyboardBuilder()
@@ -32,17 +60,52 @@ def get_main_keyboard():
     builder.button(text="🌦 Прогноз погоды")
     builder.button(text="🎤 Голосовое сообщение")
     builder.button(text="💬 Переведи текст")
+    builder.button(text="👤 Записать данные")
     builder.adjust(2)  # 2 кнопки в ряд
     return builder.as_markup(resize_keyboard=True)
+
+class Form(StatesGroup):
+    name = State()
+    age = State()
+    grade = State()
 
 # 🟢 Обработка "Старт"
 @dp.message(F.text == "👋 Старт")
 async def start_handler(message: Message):
     await message.answer(
-        "Привет! Я погодный бот. Я могу сохранить фото, отправить голосовое или перевести текст. Я также могу показать тебе прогноз погоды в Москве ☁️\n\n"
-        "Выбери нужную опцию ниже 👇",
+        "Привет! Я погодный бот. Я могу сохранить фото, отправить голосовое сообщение, перевести текст и записать твои данные в базу студентов. Я также могу показать тебе прогноз погоды в Москве ☁️\n\n."
+        "Выбери нужную опцию ниже 👇.",
         reply_markup=get_main_keyboard()
     )
+
+@dp.message(F.text == "👤 Записать данные")
+async def request_name(message: Message, state: FSMContext):
+    await message.answer("Как тебя зовут?")
+    await state.set_state(Form.name)
+
+@dp.message(Form.name)
+async def get_name(message: types.Message, state: FSMContext):
+    await state.update_data(name=message.text)
+    await message.answer("Сколько тебе лет?")
+    await state.set_state(Form.age)
+
+@dp.message(Form.age)
+async def get_age(message: types.Message, state: FSMContext):
+    if not message.text.isdigit():
+        return await message.answer("Пожалуйста, введи возраст числом.")
+    await state.update_data(age=int(message.text))
+    await message.answer("В каком классе ты учишься?")
+    await state.set_state(Form.grade)
+
+@dp.message(Form.grade)
+async def get_grade(message: types.Message, state: FSMContext):
+    await state.update_data(grade=message.text)
+    data = await state.get_data()
+
+    insert_student(data['name'], data['age'], data['grade'])
+
+    await message.answer(f"Спасибо, {data['name']}! Данные сохранены.")
+    await state.clear()
 
 # 🟡 Обработка "Помощь"
 @dp.message(F.text == "ℹ️ Помощь")
@@ -54,6 +117,7 @@ async def help_handler(message: Message):
         "ℹ️ Рассказать, что я умею\n"
         "🔤 Перевести твой текст на английский\n"
         "🎤 Преобразовать твой текст в голосовое сообщение\n\n"
+        "👤 Записать твои данные в базу данных студентов\n\n"
         "Просто нажми на кнопку или напиши сообщение!"
     )
 
