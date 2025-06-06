@@ -2,7 +2,6 @@ import asyncio
 import aiohttp
 import os
 from aiogram import Bot, Dispatcher, F, types
-from aiogram.fsm import state
 from aiogram.types import Message, FSInputFile
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from aiogram.enums import ParseMode, ContentType
@@ -15,7 +14,8 @@ from aiogram.fsm.state import State, StatesGroup
 from gtts import gTTS
 import uuid
 import sqlite3
-from aiogram.fsm.storage.memory import MemoryStorage
+from keyboards import greeting_keyboard, links_keyboard, show_more_keyboard, options_keyboard
+from aiogram.types import CallbackQuery
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -69,14 +69,48 @@ class Form(StatesGroup):
     age = State()
     grade = State()
 
+# Задание 1: Привет / Пока
+@dp.message(Command("start"))
+async def cmd_start(message: Message):
+    await message.answer("Выберите действие:", reply_markup=greeting_keyboard())
+
+@dp.message(F.text == "Привет")
+async def say_hello(message: Message):
+    await message.answer(f"Привет, {message.from_user.first_name}!")
+
+@dp.message(F.text == "Пока")
+async def say_goodbye(message: Message):
+    await message.answer(f"До свидания, {message.from_user.first_name}!")
+
+# Задание 2: URL-ссылки
+@dp.message(Command("links"))
+async def show_links(message: Message):
+    await message.answer("Выберите ссылку:", reply_markup=links_keyboard())
+
+# Задание 3: Динамическое меню
+@dp.message(Command("dynamic"))
+async def dynamic_menu(message: Message):
+    await message.answer("Нажмите кнопку ниже:", reply_markup=show_more_keyboard())
+
+@dp.callback_query(F.data == "show_more")
+async def handle_show_more(callback: CallbackQuery):
+    await callback.message.edit_text("Выберите опцию:", reply_markup=options_keyboard())
+
+@dp.callback_query(F.data.startswith("option_"))
+async def handle_option(callback: CallbackQuery):
+    option = callback.data.split("_")[1]
+    await callback.answer()
+    await callback.message.answer(f"Вы выбрали опцию {option}.")
+
+
 # 🟢 Обработка "Старт"
-@dp.message(F.text == "👋 Старт")
-async def start_handler(message: Message):
-    await message.answer(
-        "Привет! Я погодный бот. Я могу сохранить фото, отправить голосовое сообщение, перевести текст и записать твои данные в базу студентов. Я также могу показать тебе прогноз погоды в Москве ☁️\n\n."
-        "Выбери нужную опцию ниже 👇.",
-        reply_markup=get_main_keyboard()
-    )
+# @dp.message(F.text == "👋 Старт")
+# async def start_handler(message: Message):
+#     await message.answer(
+#         "Привет! Я погодный бот. Я могу сохранить фото, отправить голосовое сообщение, перевести текст и записать твои данные в базу студентов. Я также могу показать тебе прогноз погоды в Москве ☁️\n\n."
+#         "Выбери нужную опцию ниже 👇.",
+#         reply_markup=get_main_keyboard()
+#     )
 
 @dp.message(F.text == "👤 Записать данные")
 async def request_name(message: Message, state: FSMContext):
